@@ -22,7 +22,7 @@ const app = new Hono()
     const id = c.req.param('id')
 
     // 暗号文(バイナリ)とIVをKVから取得
-    const { value, metadata } = await env.KV.getWithMetadata<{ iv: string }>(generateKey(id), 'arrayBuffer')
+    const { value, metadata } = await env.KV.getWithMetadata<{ iv: string; v: number }>(generateKey(id), 'arrayBuffer')
     if (!value || !metadata?.iv) {
       return c.json({ message: 'Not Found' }, 404)
     }

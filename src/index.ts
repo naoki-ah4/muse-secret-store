@@ -3,25 +3,9 @@ import { env } from 'cloudflare:workers'
 import { authMiddleware } from './auth'
 import { logger } from 'hono/logger'
 import { HTTPException } from 'hono/http-exception'
+import { b64decode, b64encode } from './utils/string'
+import { getCryptoKey } from './utils/crypto'
 
-const b64encode = (u8: Uint8Array) => btoa(String.fromCharCode(...u8))
-const b64decode = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
-
-// AES_ENCRYPT_KEY は base64 エンコードされた 32 バイトのランダム値
-// 例: openssl rand -base64 32 | npx wrangler secret put AES_ENCRYPT_KEY
-let keyPromise: Promise<CryptoKey> | undefined
-const getCryptoKey = () => {
-  if (!env.AES_ENCRYPT_KEY) {
-    throw new HTTPException(500, { message: 'Encryption key is not configured' })
-  }
-  return (keyPromise ??= crypto.subtle.importKey(
-    'raw',
-    b64decode(env.AES_ENCRYPT_KEY),
-    'AES-GCM',
-    false,
-    ['encrypt', 'decrypt'],
-  ))
-}
 
 const app = new Hono().get('/', (c) => {
   return c.text('Hello World!')

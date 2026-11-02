@@ -6,6 +6,7 @@ import { HTTPException } from 'hono/http-exception'
 import { b64decode, b64encode } from './utils/string'
 import { getCryptoKey } from './utils/crypto'
 
+const generateKey = (key: string) => `secrets/${key}`
 
 const app = new Hono().get('/', (c) => {
   return c.text('Hello World!')
@@ -20,7 +21,7 @@ const app = new Hono().get('/', (c) => {
     const id = c.req.param('id')
 
     // 暗号文(バイナリ)とIVをKVから取得
-    const { value, metadata } = await env.KV.getWithMetadata<{ iv: string }>(id, 'arrayBuffer')
+    const { value, metadata } = await env.KV.getWithMetadata<{ iv: string }>(generateKey(id), 'arrayBuffer')
     if (!value || !metadata?.iv) {
       return c.json({ message: 'Not Found' }, 404)
     }
@@ -49,7 +50,7 @@ const app = new Hono().get('/', (c) => {
     )
 
     // 暗号文はバイナリのまま、IVはbase64にしてmetadataへ保存
-    await env.KV.put(id, encrypted, {
+    await env.KV.put(generateKey(id), encrypted, {
       metadata: { iv: b64encode(iv) },
     })
 

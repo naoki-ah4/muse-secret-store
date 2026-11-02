@@ -8,7 +8,7 @@ import { env } from "cloudflare:workers";
 const BEARER_PREFIX = "Bearer "
 
 const tokenSchema = v.object({
-    Authorization: v.pipe(
+    authorization: v.pipe(
         v.string(),
         v.minLength(16),
         v.startsWith(BEARER_PREFIX)
@@ -26,7 +26,7 @@ const tokens = new Set<string>(
 )
 
 const authMiddlewareHandler = createMiddleware<{}, string, ValidatedInput>(async (c, next) => {
-    const token = c.req.valid("header").Authorization.slice(BEARER_PREFIX.length)
+    const token = c.req.valid("header").authorization.slice(BEARER_PREFIX.length)
     if (!tokens.has(token)) {
         return c.text("Unauthorized", 401)
     }

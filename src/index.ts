@@ -43,8 +43,9 @@ const app = new Hono()
     }
 
     // 既存の値がある場合は上書きしない
-    const existing = await env.KV.get(generateKey(id))
+    const existing = await env.KV.get(generateKey(id), "stream")
     if (existing) {
+      void existing.cancel() // ストリームを閉じる
       return c.json({ message: 'Conflict' }, 409)
     }
 
@@ -65,15 +66,7 @@ const app = new Hono()
   })
   .delete('/secrets/:id', async (c) => {
     const id = c.req.param('id')
-
-    // 存在しない場合は404
-    const existing = await env.KV.get(generateKey(id))
-    if (!existing) {
-      return c.json({ message: 'Not Found' }, 404)
-    }
-
     await env.KV.delete(generateKey(id))
-
     return c.json({ success: true })
   })
   .onError((err, c) => {

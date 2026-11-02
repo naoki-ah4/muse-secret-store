@@ -10,7 +10,7 @@ const b64decode = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0)
 // AES_ENCRYPT_KEY は base64 エンコードされた 32 バイトのランダム値
 // 例: openssl rand -base64 32 | npx wrangler secret put AES_ENCRYPT_KEY
 let keyPromise: Promise<CryptoKey> | undefined
-const getKey = () => {
+const getCryptoKey = () => {
   if (!env.AES_ENCRYPT_KEY) {
     throw new HTTPException(500, { message: 'Encryption key is not configured' })
   }
@@ -44,7 +44,7 @@ const app = new Hono().get('/', (c) => {
     // AES-GCMで復号化 (idをAADにして別キーへのすり替えを検出)
     const decrypted = await crypto.subtle.decrypt(
       { name: 'AES-GCM', iv: b64decode(metadata.iv), additionalData: new TextEncoder().encode(id) },
-      await getKey(),
+      await getCryptoKey(),
       value,
     )
 
@@ -60,7 +60,7 @@ const app = new Hono().get('/', (c) => {
     const iv = crypto.getRandomValues(new Uint8Array(12))
     const encrypted = await crypto.subtle.encrypt(
       { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(id) },
-      await getKey(),
+      await getCryptoKey(),
       new TextEncoder().encode(body),
     )
 

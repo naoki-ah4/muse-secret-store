@@ -2,5 +2,11 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "muse-secret-store",
   "main": "src/index.ts",
-  "compatibility_date": "2026-11-02"
+  "compatibility_date": "2026-11-02",
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "8a19f76a981345959cfe2d49777567e4"
+    }
+  ]
 }

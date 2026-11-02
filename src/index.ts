@@ -4,9 +4,23 @@ import { authMiddleware } from './auth'
 import { logger } from 'hono/logger'
 import { HTTPException } from 'hono/http-exception'
 
-declare module 'hono' {
-  interface ContextVariableMap {
+const b64encode = (u8: Uint8Array) => btoa(String.fromCharCode(...u8))
+const b64decode = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
+
+// AES_ENCRYPT_KEY は base64 エンコードされた 32 バイトのランダム値
+// 例: openssl rand -base64 32 | npx wrangler secret put AES_ENCRYPT_KEY
+let keyPromise: Promise<CryptoKey> | undefined
+const getKey = () => {
+  if (!env.AES_ENCRYPT_KEY) {
+    throw new HTTPException(500, { message: 'Encryption key is not configured' })
   }
+  return (keyPromise ??= crypto.subtle.importKey(
+    'raw',
+    b64decode(env.AES_ENCRYPT_KEY),
+    'AES-GCM',
+    false,
+    ['encrypt', 'decrypt'],
+  ))
 }
 
 const app = new Hono().get('/', (c) => {
@@ -15,76 +29,41 @@ const app = new Hono().get('/', (c) => {
   return c.json({
     success: true,
   })
-}).get("/:id", async (c) => {
-  // 値をKVから取得
-  const { value: cryptedValue, metadata } = await env.KV.getWithMetadata<{
-    iv: string
-  }>(c.req.param("id"))
-  if (!cryptedValue || !metadata?.iv) {
-    return c.json({ message: "Not Found" }, 404)
+}).get('/:id', async (c) => {
+  const id = c.req.param('id')
+
+  // 暗号文(バイナリ)とIVをKVから取得
+  const { value, metadata } = await env.KV.getWithMetadata<{ iv: string }>(id, 'arrayBuffer')
+  if (!value || !metadata?.iv) {
+    return c.json({ message: 'Not Found' }, 404)
   }
 
-  // キーをsecretから取得
-  const key = env.AES_ENCRYPT_KEY;
-  if (!key) {
-    return c.json({ message: "Internal Server Error" }, 503)
-  }
-
-  // AES-GCMで復号化
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(key),
-    { name: "AES-GCM" },
-    false,
-    ["decrypt"]
+  // AES-GCMで復号化 (idをAADにして別キーへのすり替えを検出)
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: b64decode(metadata.iv), additionalData: new TextEncoder().encode(id) },
+    await getKey(),
+    value,
   )
 
-  const iv = new TextEncoder().encode(metadata.iv)
-  const decryptedValue = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv },
-    cryptoKey,
-    new Uint8Array(new TextEncoder().encode(cryptedValue))
-  )
-
-  // 復号化した値を文字列に変換
-  const decryptedText = new TextDecoder().decode(decryptedValue);
-  return c.text(decryptedText)
-}).post("/:id", async (c) => {
+  return c.text(new TextDecoder().decode(decrypted))
+}).post('/:id', async (c) => {
+  const id = c.req.param('id')
   const body = await c.req.text()
   if (!body) {
-    return c.json({ message: "Bad Request" }, 400)
-  }
-
-  // キーをsecretから取得
-  const key = env.AES_ENCRYPT_KEY;
-  if (!key) {
-    return c.json({ message: "Internal Server Error" }, 503)
+    return c.json({ message: 'Bad Request' }, 400)
   }
 
   // AES-GCMで暗号化
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(key),
-    { name: "AES-GCM" },
-    false,
-    ["encrypt"]
-  )
-
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  const encryptedValue = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    cryptoKey,
-    new TextEncoder().encode(body)
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, additionalData: new TextEncoder().encode(id) },
+    await getKey(),
+    new TextEncoder().encode(body),
   )
 
-  // 暗号化した値を文字列に変換
-  const encryptedText = new TextDecoder().decode(encryptedValue);
-
-  // KVに保存
-  await env.KV.put(c.req.param("id"), encryptedText, {
-    metadata: {
-      iv: new TextDecoder().decode(iv)
-    }
+  // 暗号文はバイナリのまま、IVはbase64にしてmetadataへ保存
+  await env.KV.put(id, encrypted, {
+    metadata: { iv: b64encode(iv) },
   })
 
   return c.json({ success: true })

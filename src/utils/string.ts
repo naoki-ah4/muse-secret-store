@@ -7,12 +7,9 @@ export const equalTimeCompare = (a: string, b: string) => {
         return false
     }
 
-    let result = true
+    let diff = 0
     for (let i = 0; i < a.length; i++) {
-        if (a.charCodeAt(i) !== b.charCodeAt(i)) {
-            result = false
-        }
+        diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
     }
-
-    return result
+    return diff === 0
 }

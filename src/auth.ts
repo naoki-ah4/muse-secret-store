@@ -1,8 +1,6 @@
 import { createMiddleware } from "hono/factory";
 import * as v from "valibot"
 import { every } from 'hono/combine'
-import { validator } from "hono/validator";
-import { hValidator } from "./utils/validator";
 import { vValidator } from "@hono/valibot-validator";
 import { HTTPException } from "hono/http-exception";
 

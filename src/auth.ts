@@ -3,6 +3,7 @@ import * as v from "valibot"
 import { every } from 'hono/combine'
 import { vValidator } from "@hono/valibot-validator";
 import { HTTPException } from "hono/http-exception";
+import { env } from "cloudflare:workers";
 
 const BEARER_PREFIX = "Bearer "
 
@@ -20,9 +21,13 @@ type ValidatedInput = {
     }
 }
 
+const tokens = new Set<string>(
+    env.AUTH_TOKENS?.split(",").map((t) => t.trim()).filter(Boolean) ?? []
+)
+
 const authMiddlewareHandler = createMiddleware<{}, string, ValidatedInput>(async (c, next) => {
     const token = c.req.valid("header").Authorization.slice(BEARER_PREFIX.length)
-    if (token !== "my-secret-token") {
+    if (!tokens.has(token)) {
         return c.text("Unauthorized", 401)
     }
     await next()

@@ -4,7 +4,10 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy --minify",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "format": "oxfmt src --write",
+    "fix": "oxlint src --fix",
+    "lint": "oxlint src"
   },
   "dependencies": {
     "@hono/valibot-validator": "^0.6.2",
@@ -12,6 +15,8 @@
     "valibot": "^1.5.0"
   },
   "devDependencies": {
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
     "wrangler": "^4.110.0"
   }
 }

@@ -4,6 +4,7 @@ import { every } from 'hono/combine'
 import { vValidator } from "@hono/valibot-validator";
 import { HTTPException } from "hono/http-exception";
 import { env } from "cloudflare:workers";
+import { equalTimeCompare } from "./utils/string";
 
 const BEARER_PREFIX = "Bearer "
 
@@ -21,13 +22,22 @@ type ValidatedInput = {
     }
 }
 
-const tokens = new Set<string>(
-    env.AUTH_TOKENS?.split(",").map((t) => t.trim()).filter(Boolean) ?? []
-)
+const checkTokens = async (token: string) => {
+    const tokens = await env.KV.get<string[]>("auth_tokens", {
+        type: "json",
+        cacheTtl: 60,
+    }).then(v => v?.map((t) => t.trim()).filter(Boolean)) ?? []
+
+    for (const t of tokens) {
+        if (equalTimeCompare(t, token)) {
+            return true
+        }
+    }
+}
 
 const authMiddlewareHandler = createMiddleware<{}, string, ValidatedInput>(async (c, next) => {
     const token = c.req.valid("header").authorization.slice(BEARER_PREFIX.length)
-    if (!tokens.has(token)) {
+    if (!(await checkTokens(token))) {
         return c.text("Unauthorized", 401)
     }
     await next()

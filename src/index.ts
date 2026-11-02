@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import { authMiddleware } from "./auth";
 import { logger } from "hono/logger";
 import { HTTPException } from "hono/http-exception";
+import { bodyLimit } from "hono/body-limit";
 import { b64decode, b64encode } from "./utils/string";
 import { getCryptoKey } from "./utils/crypto";
 import { hValidator } from "./utils/validator";
@@ -12,6 +13,8 @@ const generateKey = (key: string) => `secrets/${key}`;
 const idValidatorSchema = v.object({
   id: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
 });
+// シークレット1件あたりの上限 (KVの値の上限25MiBより十分小さく)
+const MAX_BODY_SIZE = 64 * 1024;
 
 const app = new Hono()
   .use(logger())
@@ -45,35 +48,43 @@ const app = new Hono()
 
     return c.text(new TextDecoder().decode(decrypted));
   })
-  .post("/secrets/:id", hValidator("param", idValidatorSchema), async (c) => {
-    const id = c.req.param("id");
-    const body = await c.req.text();
-    if (!body) {
-      return c.json({ message: "Bad Request" }, 400);
-    }
+  .post(
+    "/secrets/:id",
+    hValidator("param", idValidatorSchema),
+    bodyLimit({
+      maxSize: MAX_BODY_SIZE,
+      onError: (c) => c.json({ message: "Payload Too Large" }, 413),
+    }),
+    async (c) => {
+      const id = c.req.param("id");
+      const body = await c.req.text();
+      if (!body) {
+        return c.json({ message: "Bad Request" }, 400);
+      }
 
-    // 既存の値がある場合は上書きしない
-    const existing = await env.KV.get(generateKey(id), "stream");
-    if (existing) {
-      void existing.cancel(); // ストリームを閉じる
-      return c.json({ message: "Conflict" }, 409);
-    }
+      // 既存の値がある場合は上書きしない
+      const existing = await env.KV.get(generateKey(id), "stream");
+      if (existing) {
+        void existing.cancel(); // ストリームを閉じる
+        return c.json({ message: "Conflict" }, 409);
+      }
 
-    // AES-GCMで暗号化
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encrypted = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv, additionalData: new TextEncoder().encode(id) },
-      await getCryptoKey(),
-      new TextEncoder().encode(body),
-    );
+      // AES-GCMで暗号化
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const encrypted = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv, additionalData: new TextEncoder().encode(id) },
+        await getCryptoKey(),
+        new TextEncoder().encode(body),
+      );
 
-    // 暗号文はバイナリのまま、IVはbase64にしてmetadataへ保存
-    await env.KV.put(generateKey(id), encrypted, {
-      metadata: { iv: b64encode(iv), v: 1 },
-    });
+      // 暗号文はバイナリのまま、IVはbase64にしてmetadataへ保存
+      await env.KV.put(generateKey(id), encrypted, {
+        metadata: { iv: b64encode(iv), v: 1 },
+      });
 
-    return c.json({ success: true }, 201);
-  })
+      return c.json({ success: true }, 201);
+    },
+  )
   .delete("/secrets/:id", hValidator("param", idValidatorSchema), async (c) => {
     const id = c.req.param("id");
     await env.KV.delete(generateKey(id));

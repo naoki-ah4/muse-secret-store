@@ -8,16 +8,17 @@ import { getCryptoKey } from './utils/crypto'
 
 const generateKey = (key: string) => `secrets/${key}`
 
-const app = new Hono().get('/', (c) => {
-  return c.text('Hello World!')
-})
+const app = new Hono()
   .use(logger())
+  .get('/', (c) => {
+    return c.text('Hello World!')
+  })
   .use(authMiddleware)
   .get('/check', (c) => {
     return c.json({
       success: true,
     })
-  }).get('/:id', async (c) => {
+  }).get('/secrets/:id', async (c) => {
     const id = c.req.param('id')
 
     // 暗号文(バイナリ)とIVをKVから取得
@@ -34,11 +35,17 @@ const app = new Hono().get('/', (c) => {
     )
 
     return c.text(new TextDecoder().decode(decrypted))
-  }).post('/:id', async (c) => {
+  }).post('/secrets/:id', async (c) => {
     const id = c.req.param('id')
     const body = await c.req.text()
     if (!body) {
       return c.json({ message: 'Bad Request' }, 400)
+    }
+
+    // 既存の値がある場合は上書きしない
+    const existing = await env.KV.get(generateKey(id))
+    if (existing) {
+      return c.json({ message: 'Conflict' }, 409)
     }
 
     // AES-GCMで暗号化
@@ -51,11 +58,26 @@ const app = new Hono().get('/', (c) => {
 
     // 暗号文はバイナリのまま、IVはbase64にしてmetadataへ保存
     await env.KV.put(generateKey(id), encrypted, {
-      metadata: { iv: b64encode(iv) },
+      metadata: { iv: b64encode(iv), v: 1 },
     })
 
+    return c.json({ success: true }, 201)
+  })
+  .delete('/secrets/:id', async (c) => {
+    const id = c.req.param('id')
+
+    // 存在しない場合は404
+    const existing = await env.KV.get(generateKey(id))
+    if (!existing) {
+      return c.json({ message: 'Not Found' }, 404)
+    }
+
+    await env.KV.delete(generateKey(id))
+
     return c.json({ success: true })
-  }).onError((err, c) => {
+  })
+  .onError((err, c) => {
+    console.error(err)
     if (err instanceof HTTPException) {
       return c.json({ message: err.message, issues: err.cause }, err.status)
     }

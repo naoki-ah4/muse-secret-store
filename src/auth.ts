@@ -33,6 +33,8 @@ const checkTokens = async (token: string) => {
             return true
         }
     }
+
+    return false
 }
 
 const authMiddlewareHandler = createMiddleware<{}, string, ValidatedInput>(async (c, next) => {
@@ -40,6 +42,7 @@ const authMiddlewareHandler = createMiddleware<{}, string, ValidatedInput>(async
     if (!(await checkTokens(token))) {
         return c.text("Unauthorized", 401)
     }
+    c.header("Cache-Control", "no-store")
     await next()
 })
 

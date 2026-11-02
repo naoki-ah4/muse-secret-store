@@ -16,5 +16,8 @@ export const getCryptoKey = () => {
         'AES-GCM',
         false,
         ['encrypt', 'decrypt'],
-    ))
+    ).catch((err) => {
+        keyPromise = undefined
+        throw err
+    }))
 }
